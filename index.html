@@ -21,15 +21,15 @@ var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 function wrapPi(a){while(a>Math.PI)a-=Math.PI*2;while(a<-Math.PI)a+=Math.PI*2;return a;}
 
 /* ── Audio ── */
-var AC=null;
-function actx(){if(AC===null){try{AC=new(window.AudioContext||window.webkitAudioContext)()}catch(e){AC=false}}return AC}
+var AC=null,BUS=null;
+function actx(){if(AC===null){try{AC=new(window.AudioContext||window.webkitAudioContext)();BUS=AC.createGain();BUS.gain.value=0.85;BUS.connect(AC.destination)}catch(e){AC=false}}return AC}
 function tone(f0,f1,dur,type,vol,delay){
   var a=actx();if(!a)return;var t=a.currentTime+(delay||0);
   var o=a.createOscillator(),g=a.createGain();
   o.type=type||'sine';o.frequency.setValueAtTime(f0,t);
   if(f1&&f1!==f0)o.frequency.exponentialRampToValueAtTime(Math.max(20,f1),t+dur);
   g.gain.setValueAtTime(vol||0.1,t);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-  o.connect(g);g.connect(a.destination);o.start(t);o.stop(t+dur+0.02);
+  o.connect(g);g.connect(BUS||a.destination);o.start(t);o.stop(t+dur+0.02);
 }
 function noise(dur,vol,fType,f0,f1,delay){
   var a=actx();if(!a)return;var t=a.currentTime+(delay||0);
@@ -43,7 +43,7 @@ function noise(dur,vol,fType,f0,f1,delay){
   f.Q.value=1.2;
   var g=a.createGain();g.gain.setValueAtTime(vol||0.1,t);
   g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-  s.connect(f);f.connect(g);g.connect(a.destination);s.start(t);s.stop(t+dur+0.02);
+  s.connect(f);f.connect(g);g.connect(BUS||a.destination);s.start(t);s.stop(t+dur+0.02);
 }
 function sfx(n,v){
   if(!actx())return;v=v||1;
@@ -69,8 +69,8 @@ var musicStarted=false,musicOn=true,nextBeat=0,beatN=0,droneGain=null;
 function startMusic(){
   var a=actx();if(!a||musicStarted)return;musicStarted=true;
   if(a.state==='suspended'){try{a.resume()}catch(e){}}
-  droneGain=a.createGain();droneGain.gain.value=0.0001;droneGain.connect(a.destination);
-  droneGain.gain.setTargetAtTime(0.055,a.currentTime,2.5);
+  droneGain=a.createGain();droneGain.gain.value=0.0001;droneGain.connect(BUS||a.destination);
+  droneGain.gain.setTargetAtTime(musicOn?0.055:0.0001,a.currentTime,2.5);
   var filt=a.createBiquadFilter();filt.type='lowpass';filt.frequency.value=430;filt.Q.value=4;filt.connect(droneGain);
   var freqs=[55,55.5,82.5];
   for(var i=0;i<freqs.length;i++){var o=a.createOscillator();o.type=i===2?'triangle':'sawtooth';o.frequency.value=freqs[i];
@@ -95,8 +95,8 @@ function beat(){
   beatN++;nextBeat+=(state==='play'?0.5:0.62);
   if(nextBeat<a.currentTime)nextBeat=a.currentTime+0.5;
 }
-function musicTick(){if(!musicStarted)return;var a=actx();if(!a)return;var guard=0;while(nextBeat<a.currentTime+0.08&&guard++<8)beat();}
-function toggleMusic(){musicOn=!musicOn;var a=actx();if(droneGain&&a)droneGain.gain.setTargetAtTime(musicOn?0.055:0.0001,a.currentTime,0.3);}
+function musicTick(){if(!musicStarted||!musicOn)return;var a=actx();if(!a)return;var guard=0;while(nextBeat<a.currentTime+0.08&&guard++<8)beat();}
+function toggleMusic(){musicOn=!musicOn;var a=actx();if(droneGain&&a)droneGain.gain.setTargetAtTime(musicOn?0.055:0.0001,a.currentTime,0.3);if(musicOn&&a)nextBeat=a.currentTime+0.1;}
 
 /* ── Colors (7 marble types) ── */
 var COLORS=[
@@ -141,7 +141,6 @@ var LEVELS=[
   {colors:7,balls:200,speed:35,path:14,frog:{x:120,y:150}},
   {colors:7,balls:220,speed:36.5,path:15,frog:{x:120,y:148}}
 ];
-var NFROG=LEVELS.length;
 
 /* ── Path builders ── */
 function arcPts(cx,cy,r,a0,a1,steps){
@@ -323,10 +322,14 @@ function pathTan(dist){
   return{x:dx/l,y:dy/l};
 }
 function nearestPathDist(x,y){
-  var best=0,bd=1e9;
-  for(var i=0;i<path.length;i+=3){
-    var dx=path[i].x-x,dy=path[i].y-y,d=dx*dx+dy*dy;
-    if(d<bd){bd=d;best=path[i].d}
+  var bd=1e18,best=0;
+  for(var i=0;i<path.length-1;i++){
+    var a=path[i],b=path[i+1];
+    var ex=b.x-a.x,ey=b.y-a.y,len2=ex*ex+ey*ey;
+    var t=len2>1e-9?((x-a.x)*ex+(y-a.y)*ey)/len2:0;
+    if(t<0)t=0;else if(t>1)t=1;
+    var qx=a.x+ex*t,qy=a.y+ey*t,pdx=x-qx,pdy=y-qy,pd=pdx*pdx+pdy*pdy;
+    if(pd<bd){bd=pd;best=a.d+(b.d-a.d)*t}
   }
   return best;
 }
@@ -438,18 +441,17 @@ function drawFrog(){
   ctx.translate(-rx,0);
   ctx.fillStyle='rgba(0,0,0,0.3)';ctx.beginPath();ctx.ellipse(0,8,14,5,0,0,Math.PI*2);ctx.fill();
   ctx.drawImage(frogCv,-16,-16,36,32);
-  if(state==='play'&&swapT<=0)drawMarble(13,0,curC,0.75);
   ctx.restore();
   if(state==='play'){
+    var mr=13-recoil*3;
     if(swapT>0){
-      var prog=1-swapT/0.18,ang=prog*Math.PI;
-      var ox=Math.cos(aimA),oy=Math.sin(aimA);
-      var px=frogX+Math.cos(aimA)*13,py=frogY+Math.sin(aimA)*13;
+      var prog=1-swapT/0.18;
+      var px=frogX+Math.cos(aimA)*mr,py=frogY+Math.sin(aimA)*mr;
       var off=8*Math.sin(prog*Math.PI);
       drawMarble(px-Math.sin(aimA)*off,py+Math.cos(aimA)*off,curC,0.75);
       drawMarble(px+Math.sin(aimA)*off,py-Math.cos(aimA)*off,nextC,0.75);
     }else{
-      var bx=frogX+Math.cos(aimA)*13,by=frogY+Math.sin(aimA)*13;
+      var bx=frogX+Math.cos(aimA)*mr,by=frogY+Math.sin(aimA)*mr;
       drawMarble(bx,by,curC,0.75);
     }
     var nx=frogX+Math.cos(aimA+2.4)*14,ny=frogY+Math.sin(aimA+2.4)*14;
@@ -585,6 +587,7 @@ function cfg(idx){
   var k=idx-N,last=LEVELS[N-1];
   return{colors:Math.min(7,last.colors+Math.floor(k/4)),balls:last.balls+k*12,speed:Math.min(54,last.speed+k*1.1),path:idx%N,frog:LEVELS[idx%N].frog};
 }
+function waveNum(){var N=LEVELS.length;return lvlIdx>=N?(lvlIdx-N+1):(lvlIdx+1);}
 
 function loadLevel(idx){
   lvlIdx=idx;
@@ -594,7 +597,7 @@ function loadLevel(idx){
   buildPath(PATHFNS[L.path]());
   renderTrack();
   balls=[];shots=[];parts=[];floats=[];powerups=[];bolts=[];
-  spawned=0;spawnT=0.5;slowT=0;revT=0;multT=0;accT=0;combo=0;recoil=0;swapT=0;dangerAmt=0;
+  spawned=0;spawnT=0.5;slowT=0;revT=0;multT=0;accT=0;combo=0;recoil=0;swapT=0;dangerAmt=0;shake=0;flash=0;heartT=0;
   curC=(Math.random()*L.colors)|0;nextC=(Math.random()*L.colors)|0;
   introT=1.2;state='intro';
   if(idx>=LEVELS.length)endless=true;
@@ -604,6 +607,7 @@ function startGame(from){
   score=0;combo=0;
   endless=(mode==='gauntlet');
   lives=(mode==='ironfrog')?1:3;
+  try{localStorage.setItem('z1mode',mode)}catch(e){}
   loadLevel(from||0);
   guide.length=0;bolts.length=0;
   sfx('levelup');startMusic();
@@ -816,7 +820,7 @@ function update(dt){
       var pdx=sh.x-pp.x,pdy=sh.y-pp.y;
       if(pdx*pdx+pdy*pdy<144){activatePower(pw);powerups.splice(w,1);shots.splice(s,1);consumed=true;break}
     }
-    if(consumed)continue;
+    if(consumed){if(state!=='play')return;continue}
     for(var bi=0;bi<balls.length;bi++){
       if(balls[bi].d<-2)continue;
       var bp=pathPos(balls[bi].d);
@@ -906,7 +910,7 @@ function drawHUD(){
   ctx.fillText(''+score,4,11);
   ctx.textAlign='center';ctx.fillStyle='#9cf';ctx.font='7px monospace';
   var N=LEVELS.length;
-  var lvlTxt=endless?'∞'+(lvlIdx-N+1):''+(lvlIdx+1)+'/'+N;
+  var lvlTxt=endless?'∞'+waveNum():''+(lvlIdx+1)+'/'+N;
   if(slowT>0)lvlTxt+=' ⏳';
   if(revT>0)lvlTxt+=' ↺';
   if(multT>0)lvlTxt+=' ×2';
@@ -933,7 +937,7 @@ function drawIntro(){
     ctx.restore();
   }
   ctx.fillStyle='#ffe066';ctx.font='bold 16px monospace';ctx.textAlign='center';
-  var txt=endless?'WAVE '+(lvlIdx-LEVELS.length+1):'LEVEL '+(lvlIdx+1);
+  var txt=endless?'WAVE '+waveNum():'LEVEL '+(lvlIdx+1);
   ctx.fillText(txt,W/2,H/2-8);
   ctx.fillStyle='#cfe';ctx.font='7px monospace';
   ctx.fillText(curCn+' colors • '+totalBalls+' marbles',W/2,H/2+10);
@@ -1059,7 +1063,7 @@ window.addEventListener('keydown',function(e){
 document.addEventListener('touchmove',function(e){e.preventDefault()},{passive:false});
 
 /* ── Init ── */
-try{best=+localStorage.getItem('z1best')||0;maxUnlocked=+localStorage.getItem('z1max')||0}catch(e){}
+try{best=+localStorage.getItem('z1best')||0;maxUnlocked=+localStorage.getItem('z1max')||0;var _sm=localStorage.getItem('z1mode');if(_sm&&modes.indexOf(_sm)>=0)mode=_sm}catch(e){}
 buildAllMarbles();buildFrog();buildBG();
 
 /* ── Main loop ── */
