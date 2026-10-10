@@ -111,7 +111,7 @@ var COLORS=[
 
 /* ── State ── */
 var state='title',lvlIdx=0,score=0,best=0,lives=3,combo=0,lastPopT=-9;
-var shake=0,flash=0,flashCol='#fff',dangerAmt=0,heartT=0;
+var shake=0,flash=0,flashCol='#fff',dangerAmt=0,heartT=0,hintT=0;
 var balls=[],shots=[],parts=[],floats=[],powerups=[],bolts=[];
 var path=null,pathLen=0,spawned=0,spawnT=0,slowT=0,revT=0,shootCD=0,multT=0,accT=0;
 var aimA=-Math.PI/2,curC=0,nextC=1,recoil=0,swapT=0,introT=0,dieT=0,clearT=0;
@@ -708,6 +708,7 @@ function startGame(from){
   try{localStorage.setItem('z1mode',mode)}catch(e){}
   loadLevel(from||0);
   guide.length=0;bolts.length=0;
+  hintT=3.2;
   sfx('levelup');startMusic();
 }
 
@@ -840,6 +841,7 @@ function insertShot(sh){
 }
 
 function update(dt){
+  if(hintT>0)hintT-=dt;
   if(state==='intro'){introT-=dt;if(introT<=0)state='play';return}
   if(state==='clear'){
     clearT-=dt;updateParts(dt);updateFloats(dt);
@@ -996,6 +998,18 @@ function draw(){
   ctx.restore();
   drawHUD();
   for(var f=0;f<floats.length;f++){var fl=floats[f];ctx.globalAlpha=Math.min(1,fl.life/0.4);ctx.fillStyle=fl.col;ctx.font='bold '+fl.size+'px monospace';ctx.textAlign='center';ctx.fillText(fl.txt,fl.x,fl.y)}ctx.globalAlpha=1;
+  if(hintT>0&&(state==='play'||state==='intro')){
+    var ha=Math.min(1,hintT/0.6);
+    ctx.globalAlpha=ha*0.8;ctx.fillStyle='rgba(8,6,14,0.82)';
+    ctx.fillRect(24,H-31,W-48,19);
+    ctx.strokeStyle='rgba(57,255,20,0.55)';ctx.lineWidth=1;ctx.strokeRect(24,H-31,W-48,19);
+    ctx.globalAlpha=ha;ctx.fillStyle='#ffe066';ctx.font='bold 7px monospace';ctx.textAlign='center';
+    ctx.fillText('SCROLL: AIM',W/2-42,H-18);
+    ctx.fillStyle='#9fe0ff';ctx.fillText('SIDE: SHOOT',W/2+42,H-18);
+    ctx.fillStyle='rgba(255,255,255,0.6)';ctx.font='5px monospace';
+    ctx.fillText('(tap = swap marble)',W/2,H-38);
+    ctx.globalAlpha=1;
+  }
   if(state==='intro')drawIntro();
   else if(state==='title')drawTitle();
   else if(state==='over')drawOver();
@@ -1110,11 +1124,11 @@ function drawTitle(){
   ctx.fillText(mi===1?'endless waves':(mi===2?'one life only':'classic temples'),W/2,188);
   ctx.fillStyle='#cfe';ctx.font='6px monospace';
   ctx.fillText('SCROLL: aim   TAP: swap',W/2,204);
-  ctx.fillText('WHEEL-PRESS / 2-TAP: shoot',W/2,216);
+  ctx.fillText('SIDE BUTTON (wheel-press): shoot',W/2,216);
   ctx.fillStyle='#9a8';ctx.fillText('Match 3+ through the portal • doom at the void',W/2,229);
   ctx.fillStyle='#ffe066';ctx.font='bold 10px monospace';
   ctx.globalAlpha=0.7+0.3*Math.sin(performance.now()/400);
-  ctx.fillText('TAP TO PLAY',W/2,252);ctx.globalAlpha=1;
+  ctx.fillText('SCROLL TO PLAY',W/2,252);ctx.globalAlpha=1;
 }
 
 function drawOver(){
@@ -1125,7 +1139,7 @@ function drawOver(){
   if(score>=best&&score>0){ctx.fillStyle='#ffe066';ctx.font='bold 8px monospace';ctx.fillText('★ NEW BEST! ★',W/2,152)}
   else if(best>0){ctx.fillStyle='#9cf';ctx.font='7px monospace';ctx.fillText('BEST: '+best,W/2,152)}
   ctx.fillStyle='#ffe066';ctx.font='bold 9px monospace';
-  ctx.fillText('TAP TO RETRY',W/2,196);
+  ctx.fillText('SCROLL TO RETRY',W/2,196);
 }
 
 function drawWin(){
@@ -1157,8 +1171,9 @@ function handleTitleTap(x,y){
 }
 window.addEventListener('wheel',function(e){
   e.preventDefault();
+  if(state==='title'){startMusic();startGame(mode==='gauntlet'?0:titleSel);return}
+  if(state==='over'){startGame(mode==='gauntlet'?0:titleSel);return}
   if(state==='play')aimA+=e.deltaY*0.0009;
-  else if(state==='title')aimA+=e.deltaY*0.0009;
 },{passive:false});
 cv.addEventListener('click',function(e){
   var now=Date.now();if(now-lastTouchT<700)return;
