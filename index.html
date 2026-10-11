@@ -1576,7 +1576,7 @@ window.addEventListener('keydown',function(e){
   var k=e.key.toLowerCase();
   if(k===' '||k==='enter'){e.preventDefault();startMusic();
     if(state==='title')startGame(mode==='gauntlet'?0:titleSel);else if(state==='over')startGame(mode==='gauntlet'?0:titleSel);
-    else if(state==='win'){endless=true;loadLevel(LEVELS.length)}else if(state==='play')fire();
+    else if(state==='win'){endless=true;loadLevel(LEVELS.length)}else if(state==='play')fire(true);
     else if(state==='mini')miniJump();
   }
   if(k==='s'&&state==='play')swapBalls();
@@ -1590,11 +1590,14 @@ document.addEventListener('touchmove',function(e){e.preventDefault()},{passive:f
 /* ── Rabbit R1 hardware events (Creations SDK): wheel -> scrollUp/scrollDown, side button -> sideClick ── */
 var r1AimT=0,lastScrollT=0,lastFireT=0,dbgInput=false,evtLog=[],tapCorner=0,tapCornerT=0;
 function logEvt(n){if(!dbgInput)return;evtLog.push(n);if(evtLog.length>4)evtLog.shift()}
-function fire(){
+function fire(hw){
   if(state!=='play')return false;
   var now=Date.now();
-  if(now-lastFireT<130)return false;
-  if(now-lastScrollT<55)return false; /* wheel still turning -> that "press" is a scroll detent, not a real button */
+  if(now-lastFireT<130)return false;                    /* debounce: one shot per 130ms */
+  if(!hw&&now-lastScrollT<55)return false;              /* a *synthetic* click landing just after a wheel
+                                                            gesture is a scroll artifact, not a button press.
+                                                            Real inputs (R1 side button, space) pass hw=true
+                                                            so scroll-to-aim then side-press always fires. */
   lastFireT=now;logEvt('fire');shoot();return true;
 }
 function r1Aim(dir){
@@ -1617,7 +1620,7 @@ function r1Side(){
   if(state==='over'){startGame(mode==='gauntlet'?0:titleSel);return;}
   if(state==='win'){endless=true;loadLevel(LEVELS.length);sfx('levelup');return;}
   if(state==='intro'){introT=0;return;}
-  if(state==='play'){logEvt('side');fire();}
+  if(state==='play'){logEvt('side');fire(true);}
 }
 window.addEventListener('scrollUp',function(){r1Aim(-1)});
 window.addEventListener('scrollDown',function(){r1Aim(1)});
